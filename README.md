@@ -38,6 +38,10 @@ pip install -e .
 
 ## Konfiguration
 
+Es gibt zwei Wege – je nachdem, ob du eine oder mehrere Instanzen nutzt.
+
+### Eine Instanz: `.env`
+
 `.env.example` nach `.env` kopieren und ausfüllen:
 
 ```bash
@@ -51,6 +55,53 @@ MM_BASE_URL=https://mm.schulen-saar.de
 ```
 
 `.env` und `.mmauth.json` stehen in `.gitignore` und werden nicht eingecheckt.
+
+### Mehrere Instanzen: Profile (`config.toml`)
+
+Für mehrere Mattermost-Instanzen werden benannte **Profile** in einer
+TOML-Datei im User-Config-Verzeichnis hinterlegt:
+
+```
+~/.config/mattermost-crawler/config.toml
+```
+
+(bzw. `$XDG_CONFIG_HOME/mattermost-crawler/config.toml`). Vorlage:
+
+```bash
+mkdir -p ~/.config/mattermost-crawler
+cp config.example.toml ~/.config/mattermost-crawler/config.toml
+chmod 600 ~/.config/mattermost-crawler/config.toml   # Passwörter im Klartext
+```
+
+```toml
+default = "schule"          # gilt, wenn --profile weggelassen wird
+
+[profiles.schule]
+base_url = "https://mm.schulen-saar.de"
+username = "thomas"
+password = "..."
+
+[profiles.work]
+base_url = "https://chat.example.com"
+username = "tp"
+password = "..."
+```
+
+Auswahl zur Laufzeit mit `--profile`:
+
+```bash
+mattermost-crawler --list-profiles                       # Profile anzeigen
+mattermost-crawler --profile work --list-channels
+mattermost-crawler --profile schule --channel "Klasse 8a Info"
+```
+
+- Jedes Profil hat eine **eigene** gespeicherte Session unter
+  `~/.config/mattermost-crawler/sessions/<profil>.json`.
+- Ohne `--profile` wird das `default`-Profil verwendet (bzw. das einzige, falls
+  nur eines existiert).
+- **Vorrang:** Existiert eine `config.toml`, wird sie genutzt. Nur wenn keine
+  vorhanden ist, greift die `.env` aus dem aktuellen Verzeichnis.
+- Das Verzeichnis lässt sich per `MATTERMOST_CRAWLER_CONFIG_DIR` überschreiben.
 
 ## Benutzung
 
@@ -72,7 +123,13 @@ mattermost-crawler --channel "Allgemein" --team "Kollegium"
 
 # Eigener Zielordner (Default: ./downloads)
 mattermost-crawler --channel "Klasse 8a Info" --target ~/material
+
+# Bei mehreren Instanzen: jeweils mit --profile (siehe Konfiguration)
+mattermost-crawler --profile work --channel "Allgemein"
 ```
+
+`--profile` lässt sich mit allen obigen Befehlen kombinieren. Ohne `--profile`
+gilt das `default`-Profil bzw. – ohne `config.toml` – die `.env`.
 
 ### Ablagestruktur
 
@@ -98,6 +155,7 @@ downloads/
 | 1    | Unerwarteter API-Fehler         |
 | 2    | Login fehlgeschlagen            |
 | 3    | Channel-Auswahl fehlgeschlagen  |
+| 4    | Konfigurationsfehler (Profil)   |
 | 130  | Abbruch (Ctrl-C)                |
 
 ## Nicht implementiert (bewusst außerhalb des Umfangs)

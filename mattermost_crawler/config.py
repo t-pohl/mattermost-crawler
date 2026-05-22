@@ -29,7 +29,3 @@ class Settings(BaseSettings):
 
     def has_credentials(self) -> bool:
         return bool(self.mm_username and self.mm_password)
-
-
-def load_settings() -> Settings:
-    return Settings()

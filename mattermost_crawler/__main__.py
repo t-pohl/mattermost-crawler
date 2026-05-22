@@ -15,13 +15,14 @@ import sys
 from pathlib import Path
 
 from rich.console import Console
+from rich.table import Table
 
 from .auth import AuthError, authenticated_client
 from .channels import ChannelError, channels_table, find_channel, list_channels
 from .client import MattermostAPIError
-from .config import load_settings
 from .download import DownloadStats, download_channel
 from .posts import collect_file_refs
+from .profiles import ConfigError, config_file, list_profiles, load_settings
 
 console = Console()
 
@@ -36,10 +37,24 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
     p.add_argument(
+        "--profile",
+        metavar="NAME",
+        help=(
+            "Welche Mattermost-Instanz (Profil aus config.toml) verwendet wird. "
+            "Ohne Angabe: das 'default'-Profil bzw. – wenn keine config.toml "
+            "existiert – die .env im aktuellen Verzeichnis."
+        ),
+    )
+    p.add_argument(
+        "--list-profiles",
+        action="store_true",
+        help="Konfigurierte Instanzen/Profile auflisten und beenden.",
+    )
+    p.add_argument(
         "--auth-only",
         action="store_true",
         help=(
-            "Einloggen, Session in .mmauth.json schreiben, beenden. "
+            "Einloggen, Session speichern, beenden. "
             "(Default-Verhalten ohne weitere Flags.)"
         ),
     )
@@ -88,7 +103,17 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
-    settings = load_settings()
+
+    if args.list_profiles:
+        return _list_profiles()
+
+    try:
+        settings = load_settings(args.profile)
+    except ConfigError as e:
+        console.print(f"[red]Konfigurationsfehler: {e}[/red]")
+        return 4
+
+    console.log(f"[config] Instanz: {settings.mm_base_url}")
 
     try:
         with authenticated_client(settings, force_login=args.login) as client:
@@ -127,6 +152,24 @@ def main(argv: list[str] | None = None) -> int:
     except KeyboardInterrupt:
         console.print("[yellow]Abgebrochen.[/yellow]")
         return 130
+
+
+def _list_profiles() -> int:
+    profiles = list_profiles()
+    if not profiles:
+        console.print(
+            f"[yellow]Keine Profile konfiguriert.[/yellow] Lege {config_file()} an "
+            "(siehe README) – oder nutze die .env im aktuellen Verzeichnis."
+        )
+        return 0
+    table = Table(title="Konfigurierte Instanzen", header_style="bold")
+    table.add_column("Profil")
+    table.add_column("Instanz (base_url)")
+    table.add_column("Default", justify="center")
+    for p in profiles:
+        table.add_row(p.name, p.base_url, "★" if p.is_default else "")
+    console.print(table)
+    return 0
 
 
 def _print_summary(stats: DownloadStats) -> None:

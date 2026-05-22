@@ -1,0 +1,28 @@
+# Beispiel für mehrere Mattermost-Instanzen ("Profile").
+#
+# Kopiere diese Datei nach:
+#   ~/.config/mattermost-crawler/config.toml
+# (bzw. $XDG_CONFIG_HOME/mattermost-crawler/config.toml)
+#
+# Auswahl eines Profils zur Laufzeit:
+#   mattermost-crawler --profile work --list-channels
+# Ohne --profile wird das unter "default" genannte Profil verwendet.
+#
+# Pro Profil wird die Login-Session separat gespeichert unter
+#   ~/.config/mattermost-crawler/sessions/<profil>.json
+#
+# Hinweis: Passwörter stehen hier im Klartext (wie in einer .env). Lege die
+# Datei entsprechend nur mit eingeschränkten Rechten ab (chmod 600).
+
+# Welches Profil gilt, wenn --profile weggelassen wird.
+default = "schule"
+
+[profiles.schule]
+base_url = "https://mm.schulen-saar.de"
+username = "thomas"
+password = "dein-passwort"
+
+[profiles.work]
+base_url = "https://chat.example.com"
+username = "tp"
+password = "dein-anderes-passwort"
