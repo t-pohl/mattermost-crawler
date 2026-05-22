@@ -1,0 +1,7 @@
+.venv/
+.env
+.mmauth.json
+downloads/
+__pycache__/
+*.egg-info/
+*.pyc
