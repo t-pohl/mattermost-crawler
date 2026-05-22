@@ -36,6 +36,7 @@ class Channel:
     display_name: str
     type: str
     team_id: str
+    team_name: str  # Team-Slug (URL-Name), z. B. "lehrer-sgs"
     team_display_name: str
 
     @property
@@ -72,6 +73,7 @@ def list_channels(client: MattermostClient) -> list[Channel]:
                     display_name=c.get("display_name") or c.get("name", ""),
                     type=c["type"],
                     team_id=team.id,
+                    team_name=team.name,
                     team_display_name=team.display_name,
                 )
             )
@@ -111,7 +113,11 @@ def find_channel(
     ]
     if team:
         t = team.strip().lower()
-        candidates = [c for c in candidates if c.team_display_name.lower() == t]
+        candidates = [
+            c
+            for c in candidates
+            if c.team_display_name.lower() == t or c.team_name.lower() == t
+        ]
 
     if not candidates:
         available = ", ".join(sorted({c.display_name for c in channels})) or "(keine)"

@@ -69,7 +69,8 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         metavar="NAME",
         help=(
             "Team eingrenzen, falls ein Channel-Name in mehreren Teams "
-            "vorkommt. Nur zusammen mit --channel sinnvoll."
+            "vorkommt (Anzeigename oder Team-Slug). Nur zusammen mit "
+            "--channel sinnvoll."
         ),
     )
     p.add_argument(
