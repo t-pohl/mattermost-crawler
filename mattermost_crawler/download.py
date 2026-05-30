@@ -95,33 +95,36 @@ def download_channel(
 
     stats = DownloadStats()
 
-    for ref in file_refs:
-        # Bereits geladen?
-        existing = manifest.get(ref.file_id)
-        if existing and (target_dir / existing).exists():
-            stats.skipped += 1
-            continue
+    try:
+        for ref in file_refs:
+            # Bereits geladen?
+            existing = manifest.get(ref.file_id)
+            if existing and (target_dir / existing).exists():
+                stats.skipped += 1
+                continue
 
-        try:
-            info = client.get_json(f"/files/{ref.file_id}/info")
-            fname = _target_filename(ref.file_id, info, ref.create_at)
-            target = _resolve_collision(target_dir, fname, ref.file_id)
+            try:
+                info = client.get_json(f"/files/{ref.file_id}/info")
+                fname = _target_filename(ref.file_id, info, ref.create_at)
+                target = _resolve_collision(target_dir, fname, ref.file_id)
 
-            content = client.get_bytes(f"/files/{ref.file_id}")
-            target.write_bytes(content)
+                content = client.get_bytes(f"/files/{ref.file_id}")
+                target.write_bytes(content)
 
-            manifest[ref.file_id] = target.name
-            stats.new += 1
-            console.print(f"  [green]+[/green] {target.name}")
-        except MattermostAPIError as e:
-            stats.failed += 1
-            console.print(
-                f"  [red]![/red] Datei {ref.file_id} fehlgeschlagen "
-                f"(HTTP {e.status_code}: {e.message})"
-            )
-        except OSError as e:
-            stats.failed += 1
-            console.print(f"  [red]![/red] Datei {ref.file_id} nicht schreibbar: {e}")
+                manifest[ref.file_id] = target.name
+                _save_manifest(manifest_path, manifest)
+                stats.new += 1
+                console.print(f"  [green]+[/green] {target.name}")
+            except MattermostAPIError as e:
+                stats.failed += 1
+                console.print(
+                    f"  [red]![/red] Datei {ref.file_id} fehlgeschlagen "
+                    f"(HTTP {e.status_code}: {e.message})"
+                )
+            except OSError as e:
+                stats.failed += 1
+                console.print(f"  [red]![/red] Datei {ref.file_id} nicht schreibbar: {e}")
+    finally:
+        _save_manifest(manifest_path, manifest)
 
-    _save_manifest(manifest_path, manifest)
     return stats
