@@ -27,7 +27,7 @@ from .sanitize import sanitize_dir_name, sanitize_file_name
 
 console = Console()
 
-_MANIFEST_NAME = ".manifest.json"
+_MANIFEST_NAME = "manifest.json"
 
 
 @dataclass
