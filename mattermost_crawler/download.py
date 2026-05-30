@@ -14,6 +14,7 @@ auch bei doppelten Dateinamen.
 from __future__ import annotations
 
 import json
+import unicodedata
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -51,6 +52,30 @@ def _save_manifest(path: Path, manifest: dict[str, str]) -> None:
     path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
+def _nfc(name: str) -> str:
+    """Normalisiert einen Dateinamen auf NFC für vergleichszwecke.
+
+    Netzwerk-Shares (Synology/SMB) speichern Dateinamen je nach Lauf mal als
+    NFC (``ö`` = ein Codepoint) und mal als NFD (``o`` + kombinierendes Trema).
+    Ein exakter String-Vergleich zwischen Manifest und Platte schlägt dann fehl
+    und lädt bereits vorhandene Dateien erneut herunter. Der Vergleich erfolgt
+    daher konsequent über die NFC-Form.
+    """
+    return unicodedata.normalize("NFC", name)
+
+
+def _scan_existing(target_dir: Path) -> dict[str, str]:
+    """Index vorhandener Dateien: NFC-normalisierter Name -> tatsächlicher Name."""
+    present: dict[str, str] = {}
+    try:
+        for entry in target_dir.iterdir():
+            if entry.is_file():
+                present[_nfc(entry.name)] = entry.name
+    except OSError:
+        pass
+    return present
+
+
 def _date_prefix(create_at_ms: int) -> str:
     if create_at_ms <= 0:
         return "0000-00-00"
@@ -67,11 +92,10 @@ def _target_filename(file_id: str, info: dict, create_at_ms: int) -> str:
     return f"{_date_prefix(create_at_ms)}_{name}"
 
 
-def _resolve_collision(target_dir: Path, fname: str, file_id: str) -> Path:
+def _resolve_collision(target_dir: Path, fname: str, file_id: str, present: dict[str, str]) -> Path:
     """Vermeidet Überschreiben bei doppelten Dateinamen verschiedener file_ids."""
-    target = target_dir / fname
-    if not target.exists():
-        return target
+    if _nfc(fname) not in present:
+        return target_dir / fname
     stem = Path(fname).stem
     suffix = Path(fname).suffix
     return target_dir / f"{stem}_{file_id[:8]}{suffix}"
@@ -92,26 +116,32 @@ def download_channel(
     target_dir.mkdir(parents=True, exist_ok=True)
     manifest_path = target_dir / _MANIFEST_NAME
     manifest = _load_manifest(manifest_path)
+    # Normalisierungs-unabhängiger Index der bereits vorhandenen Dateien (s. _nfc).
+    present = _scan_existing(target_dir)
 
     stats = DownloadStats()
 
     try:
         for ref in file_refs:
-            # Bereits geladen?
+            # Bereits geladen? Der Manifest-Eintrag ist über die file_id
+            # eindeutig; die zusätzliche Platten-Prüfung erfolgt
+            # normalisierungs-unabhängig, damit NFC/NFD-Unterschiede auf
+            # Netzwerk-Shares keine Doppel-Downloads auslösen.
             existing = manifest.get(ref.file_id)
-            if existing and (target_dir / existing).exists():
+            if existing and _nfc(existing) in present:
                 stats.skipped += 1
                 continue
 
             try:
                 info = client.get_json(f"/files/{ref.file_id}/info")
                 fname = _target_filename(ref.file_id, info, ref.create_at)
-                target = _resolve_collision(target_dir, fname, ref.file_id)
+                target = _resolve_collision(target_dir, fname, ref.file_id, present)
 
                 content = client.get_bytes(f"/files/{ref.file_id}")
                 target.write_bytes(content)
 
                 manifest[ref.file_id] = target.name
+                present[_nfc(target.name)] = target.name
                 _save_manifest(manifest_path, manifest)
                 stats.new += 1
                 console.print(f"  [green]+[/green] {target.name}")
