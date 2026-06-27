@@ -121,6 +121,9 @@ mattermost-crawler --channel "Klasse 8a Info"
 # Falls der Channel-Name in mehreren Teams vorkommt:
 mattermost-crawler --channel "Allgemein" --team "Kollegium"
 
+# Nur Anhänge ab einem Datum (inklusive, lokale Zeit, Tagesbeginn)
+mattermost-crawler --channel "Klasse 8a Info" --after 2026-01-15
+
 # Eigener Zielordner (Default: ./downloads)
 mattermost-crawler --channel "Klasse 8a Info" --target ~/material
 

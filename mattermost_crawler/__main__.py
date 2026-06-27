@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from datetime import datetime
 from pathlib import Path
 
 from rich.console import Console
@@ -25,6 +26,17 @@ from .posts import collect_file_refs
 from .profiles import ConfigError, config_file, list_profiles, load_settings
 
 console = Console()
+
+
+def _parse_after_date(value: str) -> int:
+    """Parst ``YYYY-MM-DD`` zum Tagesbeginn (lokale Zeit) als ms seit Epoch."""
+    try:
+        dt = datetime.strptime(value, "%Y-%m-%d")
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            f"Ungültiges Datum '{value}'. Erwartet wird das Format YYYY-MM-DD."
+        )
+    return int(dt.timestamp() * 1000)
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -89,6 +101,16 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
     p.add_argument(
+        "--after",
+        metavar="YYYY-MM-DD",
+        type=_parse_after_date,
+        help=(
+            "Nur Anhänge aus Posts, die an oder nach diesem Datum erstellt "
+            "wurden, herunterladen (inklusive, lokale Zeit, Tagesbeginn). "
+            "Nur zusammen mit --channel sinnvoll."
+        ),
+    )
+    p.add_argument(
         "--target",
         type=Path,
         default=Path("downloads"),
@@ -126,9 +148,18 @@ def main(argv: list[str] | None = None) -> int:
                 channel = find_channel(channels, args.channel, args.team)
                 console.print(f"[bold cyan]Channel: {channel.label}[/bold cyan]")
 
-                refs = collect_file_refs(client, channel.id)
+                if args.after is not None:
+                    cutoff = datetime.fromtimestamp(args.after / 1000)
+                    console.print(
+                        f"[cyan]Filter: nur Anhänge ab {cutoff:%Y-%m-%d}.[/cyan]"
+                    )
+
+                refs = collect_file_refs(client, channel.id, after_ms=args.after)
                 if not refs:
-                    console.print("[yellow]Keine Anhänge im Channel gefunden.[/yellow]")
+                    msg = "Keine Anhänge im Channel gefunden."
+                    if args.after is not None:
+                        msg = "Keine Anhänge im Channel ab dem angegebenen Datum gefunden."
+                    console.print(f"[yellow]{msg}[/yellow]")
                     return 0
 
                 stats = download_channel(client, channel, refs, args.target)

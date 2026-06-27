@@ -32,8 +32,17 @@ class FileRef:
     create_at: int  # ms seit Epoch (Erstellzeit des Posts)
 
 
-def collect_file_refs(client: MattermostClient, channel_id: str) -> list[FileRef]:
+def collect_file_refs(
+    client: MattermostClient,
+    channel_id: str,
+    after_ms: int | None = None,
+) -> list[FileRef]:
     """Sammelt alle Datei-Referenzen über die gesamte Channel-Historie.
+
+    Ist ``after_ms`` gesetzt, werden nur Anhänge aus Posts berücksichtigt, die
+    am oder nach diesem Zeitpunkt (ms seit Epoch, inklusive) erstellt wurden.
+    Da rückwärts (neueste zuerst) geblättert wird, kann die Paginierung
+    abgebrochen werden, sobald eine Seite vollständig vor dem Stichtag liegt.
 
     Rückgabe ist chronologisch (älteste zuerst).
     """
@@ -42,6 +51,7 @@ def collect_file_refs(client: MattermostClient, channel_id: str) -> list[FileRef
     before: str | None = None
     pages = 0
     posts_scanned = 0
+    stop = False
 
     while True:
         params: dict[str, object] = {"per_page": _PER_PAGE}
@@ -56,6 +66,13 @@ def collect_file_refs(client: MattermostClient, channel_id: str) -> list[FileRef
         for pid in order:
             post = posts.get(pid, {})
             posts_scanned += 1
+            create_at = int(post.get("create_at", 0))
+            if after_ms is not None and create_at < after_ms:
+                # Älter als der Stichtag – Anhänge dieses Posts ignorieren.
+                # Sobald wir vor dem Stichtag liegen, können wir nach dieser
+                # Seite aufhören (es folgen nur noch ältere Posts).
+                stop = True
+                continue
             for fid in post.get("file_ids", []) or []:
                 if fid in seen_files:
                     continue
@@ -64,13 +81,13 @@ def collect_file_refs(client: MattermostClient, channel_id: str) -> list[FileRef
                     FileRef(
                         file_id=fid,
                         post_id=pid,
-                        create_at=int(post.get("create_at", 0)),
+                        create_at=create_at,
                     )
                 )
 
         pages += 1
         before = order[-1]
-        if not data.get("has_next", False):
+        if stop or not data.get("has_next", False):
             break
 
     console.log(
