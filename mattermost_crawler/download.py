@@ -24,7 +24,12 @@ from rich.console import Console
 from .channels import Channel
 from .client import MattermostAPIError, MattermostClient
 from .posts import FileRef
-from .sanitize import sanitize_dir_name, sanitize_file_name
+from .sanitize import (
+    contains_uuid,
+    resolve_uuid_serials,
+    sanitize_dir_name,
+    sanitize_file_name,
+)
 
 console = Console()
 
@@ -82,9 +87,11 @@ def _date_prefix(create_at_ms: int) -> str:
     return datetime.fromtimestamp(create_at_ms / 1000).strftime("%Y-%m-%d")
 
 
-def _target_filename(file_id: str, info: dict, create_at_ms: int) -> str:
+def _target_filename(
+    file_id: str, info: dict, create_at_ms: int, *, strip_uuid: bool = True
+) -> str:
     raw_name = info.get("name") or f"{file_id}"
-    name = sanitize_file_name(raw_name)
+    name = sanitize_file_name(raw_name, strip_uuid=strip_uuid)
     # Falls die Sanitisierung die Extension verschluckt hat, aus info ergänzen.
     ext = info.get("extension") or ""
     if ext and not name.endswith(f".{ext.lower()}"):
@@ -121,20 +128,46 @@ def download_channel(
 
     stats = DownloadStats()
 
-    try:
-        for ref in file_refs:
-            # Bereits geladen? Der Manifest-Eintrag ist über die file_id
-            # eindeutig; die zusätzliche Platten-Prüfung erfolgt
-            # normalisierungs-unabhängig, damit NFC/NFD-Unterschiede auf
-            # Netzwerk-Shares keine Doppel-Downloads auslösen.
-            existing = manifest.get(ref.file_id)
-            if existing and _nfc(existing) in present:
-                stats.skipped += 1
-                continue
+    # Pass 1: Skip-Prüfung + Info-Abruf für die noch zu ladenden Dateien. Der
+    # Manifest-Eintrag ist über die file_id eindeutig; die zusätzliche
+    # Platten-Prüfung erfolgt normalisierungs-unabhängig, damit NFC/NFD-Unterschiede
+    # auf Netzwerk-Shares keine Doppel-Downloads auslösen.
+    pending: list[tuple[FileRef, dict]] = []
+    for ref in file_refs:
+        existing = manifest.get(ref.file_id)
+        if existing and _nfc(existing) in present:
+            stats.skipped += 1
+            continue
+        try:
+            info = client.get_json(f"/files/{ref.file_id}/info")
+        except MattermostAPIError as e:
+            stats.failed += 1
+            console.print(
+                f"  [red]![/red] Datei {ref.file_id} fehlgeschlagen "
+                f"(HTTP {e.status_code}: {e.message})"
+            )
+            continue
+        pending.append((ref, info))
 
+    # UUID-Kollisionen innerhalb dieses Channel-Batches per Seriennummer auflösen.
+    # Kollisions-Schlüssel ist der volle Zielname (inkl. Datums-Präfix). ``present``
+    # als ``reserved``, weil der Batch bereits geladene Dateien nicht enthält.
+    entries = [
+        (
+            _target_filename(ref.file_id, info, ref.create_at, strip_uuid=True),
+            contains_uuid(info.get("name") or ""),
+            info.get("name") or ref.file_id,
+        )
+        for ref, info in pending
+    ]
+    resolved = resolve_uuid_serials(
+        entries, is_file=True, reserved=set(present.values())
+    )
+
+    # Pass 2: Download.
+    try:
+        for (ref, info), fname in zip(pending, resolved):
             try:
-                info = client.get_json(f"/files/{ref.file_id}/info")
-                fname = _target_filename(ref.file_id, info, ref.create_at)
                 target = _resolve_collision(target_dir, fname, ref.file_id, present)
 
                 content = client.get_bytes(f"/files/{ref.file_id}")
