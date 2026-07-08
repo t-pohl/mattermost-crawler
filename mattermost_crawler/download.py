@@ -91,12 +91,20 @@ def _target_filename(
     file_id: str, info: dict, create_at_ms: int, *, strip_uuid: bool = True
 ) -> str:
     raw_name = info.get("name") or f"{file_id}"
-    name = sanitize_file_name(raw_name, strip_uuid=strip_uuid)
-    # Falls die Sanitisierung die Extension verschluckt hat, aus info ergänzen.
+    # Extension aus info ergänzen, falls der Rohname sie nicht schon trägt.
     ext = info.get("extension") or ""
-    if ext and not name.endswith(f".{ext.lower()}"):
-        name = f"{name}.{ext.lower()}"
-    return f"{_date_prefix(create_at_ms)}_{name}"
+    if ext and not raw_name.lower().endswith(f".{ext.lower()}"):
+        raw_name = f"{raw_name}.{ext.lower()}"
+    # WICHTIG: Datums-Präfix VOR der Sanitisierung ansetzen und den *vollen*
+    # Basenamen sanitisieren. Würden wir nur das Namensfragment sanitisieren
+    # und danach "<datum>_" davor und ggf. ".<ext>" dahinter kleben, entstünde
+    # bei leerem/UUID-Namen ein Unterstrich direkt vor der Endung
+    # ("2025-11-26_.jpg") — genau der Fall, den sanitizeNames.sh (Regel 14)
+    # nachträglich wieder umbenennt und den die Serien-Nummerierung sonst zu
+    # "2025-11-26__2.jpg" verschlimmert. Auf dem ganzen Namen greift Regel 14
+    # und wir liefern direkt einen Fixpunkt von sanitizeNames.sh.
+    full = f"{_date_prefix(create_at_ms)}_{raw_name}"
+    return sanitize_file_name(full, strip_uuid=strip_uuid)
 
 
 def _resolve_collision(target_dir: Path, fname: str, file_id: str, present: dict[str, str]) -> Path:
