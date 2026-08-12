@@ -79,8 +79,20 @@ class MattermostClient:
         return self._token
 
     def set_token(self, token: str) -> None:
+        if not token:
+            self.clear_token()
+            return
         self._token = token
         self._http.headers["Authorization"] = f"Bearer {token}"
+
+    def clear_token(self) -> None:
+        """Verwirft den Token; danach geht der Authorization-Header nicht mehr mit.
+
+        Ein leerer Header-Wert (``Bearer ``) wäre kein gültiger Header und würde
+        schon beim Senden scheitern – der Header muss also ganz verschwinden.
+        """
+        self._token = None
+        self._http.headers.pop("Authorization", None)
 
     # -- Der einzige erlaubte schreibende Aufruf ---------------------------
     def login(self, login_id: str, password: str) -> dict[str, Any]:

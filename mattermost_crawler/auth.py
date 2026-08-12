@@ -90,7 +90,7 @@ def authenticated_client(
                     yield client
                     return
                 console.log("[auth] Gespeicherter Token ungültig/abgelaufen.")
-                client.set_token("")  # verworfener Token
+                client.clear_token()  # verworfener Token
 
         # Tier 2: Credential-Login.
         if not settings.has_credentials():
